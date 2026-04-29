@@ -2,45 +2,45 @@
 
 if (!defined('ABSPATH')) exit;
 
-class PPWH_Webhook {
+class PPWH_Hooks {
 
-    public function send($post_id, $action) {
+    public function __construct() {
+        add_action('save_post', [$this, 'handle_save'], 10, 3);
+        add_action('before_delete_post', [$this, 'handle_delete']);
+    }
 
-        $api_url = get_option('ppwh_api_url');
-        $secret  = get_option('ppwh_secret_key');
+    public function handle_save($post_id, $post, $update) {
 
-        if (!$api_url || !$secret) return;
+        if (wp_is_post_autosave($post_id)) return;
+        if (wp_is_post_revision($post_id)) return;
+        if ($post->post_status !== 'publish') return;
 
+        $event = $update ? 'update' : 'create';
+
+        $this->process_rules($post_id, $post, $event);
+    }
+
+    public function handle_delete($post_id) {
         $post = get_post($post_id);
-
         if (!$post) return;
 
-        $data = [
-            'id'        => $post->ID,
-            'title'     => $post->post_title,
-            'content'   => $post->post_content,
-            'excerpt'   => $post->post_excerpt,
-            'status'    => $post->post_status,
-            'type'      => $post->post_type,
-            'author'    => $post->post_author,
-            'date'      => $post->post_date,
-            'modified'  => $post->post_modified,
-            'action'    => $action,
-            'permalink' => get_permalink($post->ID)
-        ];
+        $this->process_rules($post_id, $post, 'delete');
+    }
 
-        $response = wp_remote_post($api_url, [
-            'method'  => 'POST',
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'X-SECRET-KEY' => $secret
-            ],
-            'body'    => wp_json_encode($data),
-            'timeout' => 15
-        ]);
+    private function process_rules($post_id, $post, $event) {
 
-        if (is_wp_error($response)) {
-            error_log('PostPulse Webhook Error: ' . $response->get_error_message());
+        $rules = get_option('ppwh_rules', []);
+
+        foreach ($rules as $rule) {
+
+            if (empty($rule['enabled'])) continue;
+
+            if ($rule['post_type'] !== $post->post_type) continue;
+
+            if ($rule['event'] !== $event) continue;
+
+            $webhook = new PPWH_Webhook();
+            $webhook->send($rule);
         }
     }
 }

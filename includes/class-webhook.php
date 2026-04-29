@@ -2,27 +2,31 @@
 
 if (!defined('ABSPATH')) exit;
 
-class PPWH_Hooks {
+class PPWH_Webhook {
 
-    public function __construct() {
-        add_action('save_post', [$this, 'handle_post'], 10, 3);
-    }
+    public function send($rule) {
 
-    public function handle_post($post_id, $post, $update) {
+        if (empty($rule['api_url']) || empty($rule['secret']) || empty($rule['tag'])) return;
 
-        // Prevent garbage triggers
-        if (wp_is_post_autosave($post_id)) return;
-        if (wp_is_post_revision($post_id)) return;
+        $body = [
+            'secret' => $rule['secret'],
+            'tag'    => $rule['tag']
+        ];
 
-        // Only published posts
-        if ($post->post_status !== 'publish') return;
+        $args = [
+            'method'  => $rule['method'] ?? 'POST',
+            'headers' => [
+                'Content-Type' => 'application/json'
+            ],
+            'body'    => wp_json_encode($body),
+            'timeout' => 10
+        ];
 
-        // Optional: only post type = post
-        if ($post->post_type !== 'post') return;
-
-        $action = $update ? 'updated' : 'created';
-
-        $webhook = new PPWH_Webhook();
-        $webhook->send($post_id, $action);
+        if ($rule['method'] === 'GET') {
+            $url = add_query_arg($body, $rule['api_url']);
+            wp_remote_get($url);
+        } else {
+            wp_remote_post($rule['api_url'], $args);
+        }
     }
 }
