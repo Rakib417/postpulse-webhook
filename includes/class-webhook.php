@@ -6,41 +6,49 @@ class PPWH_Webhook {
 
     public function send($rule, $post = null) {
 
+        // API required
         if (empty($rule['api_url'])) return;
 
         $method = strtoupper($rule['method'] ?? 'POST');
 
-        $body = [];
+        // Build payload
+        $payload = [];
 
-        // Secret (always fixed)
+        // Secret (fixed)
         if (!empty($rule['secret'])) {
-            $body['secret'] = $rule['secret'];
+            $payload['secret'] = $rule['secret'];
         }
 
-        // Tag logic
+        // Tag logic (ALWAYS array: tags[])
+        $tag = '';
+
+        // Manual tag
         if (!empty($rule['tag'])) {
-            $body['tag'] = $rule['tag'];
-        } elseif ($post) {
-            $body['tag'] = $post->post_name; // dynamic slug
+            $tag = $rule['tag'];
+        }
+        // Dynamic tag (post slug)
+        elseif ($post && !empty($post->post_name)) {
+            $tag = $post->post_name;
         }
 
+        // Add tags array
+        if (!empty($tag)) {
+            $payload['tags'] = ["posts", $tag]; // IMPORTANT: must be array
+        }
+
+        // Request args
         $args = [
             'method'  => $method,
+            'headers' => [
+                'Content-Type' => 'application/json'
+            ],
             'timeout' => 10,
+            'body'    => wp_json_encode($payload),
         ];
 
-        if (!empty($body)) {
-            $args['headers'] = [
-                'Content-Type' => 'application/json'
-            ];
-            $args['body'] = wp_json_encode($body);
-        }
-
+        // GET support (optional)
         if ($method === 'GET') {
-            $url = !empty($body)
-                ? add_query_arg($body, $rule['api_url'])
-                : $rule['api_url'];
-
+            $url = add_query_arg($payload, $rule['api_url']);
             wp_remote_get($url);
         } else {
             wp_remote_request($rule['api_url'], $args);
